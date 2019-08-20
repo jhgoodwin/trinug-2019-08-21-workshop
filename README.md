@@ -6,27 +6,37 @@ Some of the scariest code to test can sometimes be your database dependency. Rat
 
 In this workshop, we will:
 
-* Create a new ASP .NET Core API project.
-* Add an API to get data from a pre-existing database
-* Add a service project
-* Add a postgres service project
-* Connect to a pre-provisioned postgres database
-* Add a service test project
-* Add provider tests which fake the database.
+- Create a new ASP .NET Core API project.
+- Add an API to get data from a pre-existing database
+- Add a service project
+- Add a postgres service project
+- Connect to a pre-provisioned postgres database
+- Add a service test project
+- Add provider tests which fake the database.
 
 ## Prerequisites
 
-* dotnet core 2.2 SDK or better
+- dotnet core 2.2 SDK or better
 
 ## Creating the Database
 
 This was done before the workshop, but for the sake of transparency, these were the resources used:
 
-* http://www.postgresqltutorial.com/postgresql-sample-database/
-* http://www.postgresqltutorial.com/load-postgresql-sample-database/
-* https://tableplus.io/blog/2018/04/postgresql-how-to-create-read-only-user.html
+- http://www.postgresqltutorial.com/postgresql-sample-database/
+- http://www.postgresqltutorial.com/load-postgresql-sample-database/
+- https://tableplus.io/blog/2018/04/postgresql-how-to-create-read-only-user.html
 
-The exact scripts will be added to [./data](./data)
+To run local w/ docker:
+
+```bash
+curl -o ~/Downloads/dvdrental.zip http://www.postgresqltutorial.com/wp-content/uploads/2019/05/dvdrental.zip
+docker run --rm -it -p 5432:5432 --name dvdrental -v ~/Downloads/dvdrental.tar:/tmp/dvdrental.tar postgres:10
+# in another shell
+docker exec -it dvdrental /bin/bash
+# inside the container
+psql -U postgres -c 'CREATE DATABASE dvdrental;'
+pg_restore -U postgres -d dvdrental /tmp/dvdrental.tar
+```
 
 ## Initialize Project
 
@@ -65,35 +75,35 @@ dotnet add DvdRental.WebApi package Swashbuckle.AspNetCore --version 4.0.1
 ```
 
 ```c#
-        // Startup.cs
-        public void ConfigureServices(IServiceCollection services)
-        {
-            services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_2);
-            
-            // Register the Swagger generator, defining 1 or more Swagger documents
-            services.AddSwaggerGen(c =>
-            {
-                c.SwaggerDoc("v1", new OpenApiInfo { Title = "Dvd Rental API", Version = "v1" });
-            });
-        }
+// Startup.cs
+public void ConfigureServices(IServiceCollection services)
+{
+    services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_2);
+    
+    // Register the Swagger generator, defining 1 or more Swagger documents
+    services.AddSwaggerGen(c =>
+    {
+        c.SwaggerDoc("v1", new OpenApiInfo { Title = "Dvd Rental API", Version = "v1" });
+    });
+}
 ```
 
 ```c#
-        // Startup.cs
-        public void Configure(IApplicationBuilder app, IHostingEnvironment env)
-        {
-            // Enable middleware to serve generated Swagger as a JSON endpoint.
-            app.UseSwagger();
-            
-            // Enable middleware to serve swagger-ui (HTML, JS, CSS, etc.),
-            // specifying the Swagger JSON endpoint.
-            app.UseSwaggerUI(c =>
-            {
-                c.SwaggerEndpoint("/swagger/v1/swagger.json", "Dvd Rental API V1");
-            });
-            
-            app.UseMvc();
-        }
+// Startup.cs
+public void Configure(IApplicationBuilder app, IHostingEnvironment env)
+{
+    // Enable middleware to serve generated Swagger as a JSON endpoint.
+    app.UseSwagger();
+    
+    // Enable middleware to serve swagger-ui (HTML, JS, CSS, etc.),
+    // specifying the Swagger JSON endpoint.
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Dvd Rental API V1");
+    });
+    
+    app.UseMvc();
+}
 ```
 
 Use editor to fix usings or:
@@ -118,6 +128,7 @@ Change both instances of:
 ```
 
 To this:
+
 ```json
 "launchUrl": "swagger",
 ```
@@ -170,14 +181,14 @@ dotnet sln add DvdRental.Service
 
 ## Add Missing Contracts
 
-### Create IFilmRepository
+### Create IFilmsRepository
 
 ```csharp
-// IFilmRepository.cs
-public interface IFilmRepository
+// IFilmsRepository.cs
+public interface IFilmsRepository
 {
     IEnumerable<Film> List();
-    Film Get(string id);
+    Film Get(int id);
 }
 ```
 
@@ -198,17 +209,17 @@ Okay, run the webapi - whoops - notice the startup now needs to know about IFilm
 
 Before we hook up to something with moving parts, let's do a simple stub to prove we didn't break too much
 
-### Create StubFilmRepository
+### Create StubFilmsRepository
 
 ```csharp
-// StubFilmRepository.cs
-public class StubFilmRepository : IFilmRepository
+// StubFilmsRepository.cs
+public class StubFilmsRepository : IFilmsRepository
 {
     private List<Film> _films = new List<Film>()
     {
         new Film { FilmId = 1, Title = "Test Film1", Description = "My Film1", ReleaseYear = 2018 },
-        new Film { FilmId = 2, Title = "Test Film2", Description = "My Film2", ReleaseYear = 2019 },
-    }
+        new Film { FilmId = 2, Title = "Test Film2", Description = "My Film2", ReleaseYear = 2019 }
+    };
     
     // are you able to finish the stub yourself?
 }
@@ -219,12 +230,12 @@ public class StubFilmRepository : IFilmRepository
 Add the stub to the startup.
 
 ```csharp
-        // Startup.cs
-        public void ConfigureServices(IServiceCollection services)
-        {
-            ...
-            services.TryAddScoped<IFilmRepository, StubFilmRepository>();
-        }
+// Startup.cs
+public void ConfigureServices(IServiceCollection services)
+{
+    ...
+    services.TryAddScoped<IFilmsRepository, StubFilmsRepository>();
+}
 ```
 
 Now, launch the swagger page. It should show us our stub films.
@@ -249,7 +260,7 @@ public class PostgresFilmsRepository: IFilmsRepository
         if (_dbConnection.State != ConnectionState.Open) _dbConnection.Open();
         using (var command = _dbConnection.CreateCommand())
         {
-            command.CommandText = "SELECT film_id, title, description, release_year FROM films";
+            command.CommandText = "SELECT film_id, title, description, release_year FROM film";
             command.Prepare();
             var result = new List<Film>();
             using (var reader = command.ExecuteReader())
@@ -262,8 +273,14 @@ public class PostgresFilmsRepository: IFilmsRepository
             }
         }
     }
-    // are you able to infer the Get function and ToFilm functions?
-    // remember the postgres database uses lowercase fields with underscores by convention
+    /* are you able to infer the Get function and ToFilm functions?
+     remember the postgres database uses lowercase fields with underscores by convention
+     Hint, the old style of creating parameters:
+        var pFilmId = command.CreateParameter();
+        pFilmId.ParameterName = "film_id";
+        pFilmId.Value = id;
+        command.Parameters.Add(pFilmId);
+    */
 }
 ```
 
@@ -273,19 +290,18 @@ Okay, run the webapi - whoops - notice the PostgresFilmsRepository needs a DbCon
 
 ### Add DbConnection
 
-```
+```csharp
 // Startup.cs
 
-        private static DbConnection CreatePostgresConnection()
-            => new NpgSqlConnection("Host=trinug20190821......;Database=dvdrental;Username=reader;Password=trinug");
+private static DbConnection CreatePostgresConnection()
+    => new NpgsqlConnection("Host=trinug20190821......;Database=dvdrental;Username=reader;Password=trinug");
 
-        public void ConfigureServices(IServiceCollection services)
-        {
-            ...
-            services.TryAddScoped<IFilmRepository, PostgresFilmRepository>();
-            services.TryAddScoped<DbConnection>(_ => CreatePostgresConnection());
-        }
-
+public void ConfigureServices(IServiceCollection services)
+{
+    ...
+    services.TryAddScoped<IFilmsRepository, PostgresFilmsRepository>();
+    services.TryAddScoped<DbConnection>(_ => CreatePostgresConnection());
+}
 ```
 
 Now, run the webapi - whoo! The service works!
@@ -309,14 +325,22 @@ Reasons:
 
 ## Add Test Project
 
-...
+```shell
+dotnet new xunit -n DvdRental.Tests
+dotnet sln add DvdRental.Tests
+```
 
 ## Fake Database
 
-Add nuget package `Goodwin.John.Fakes.FakeDbProvider`
+Add some test nuget packages and the other projects
 
 ```shell
 dotnet add DvdRental.Tests package Goodwin.John.Fakes.FakeDbProvider
+dotnet add DvdRental.Tests package Microsoft.AspNetCore
+dotnet add DvdRental.Tests package Microsoft.AspNetCore.Mvc
+dotnet add DvdRental.Tests package Microsoft.AspNetCore.TestHost
+dotnet add DvdRental.Tests reference DvdRental.Service
+dotnet add DvdRental.Tests reference DvdRental.WebApi
 ```
 
 Inherit your test class from `AbstractFakeDbTest`
@@ -324,59 +348,59 @@ Inherit your test class from `AbstractFakeDbTest`
 Show how to setup the ExecuteReaderAsync
 
 ```csharp
-    // Find a place to put this
-    public static readonly string[] FilmTableColumnNames = 
-    {
-        "film_id", "title", "description", "release_year"
-    };
+// Find a place to put this
+public static readonly string[] FilmTableColumnNames = 
+{
+    "film_id", "title", "description", "release_year"
+};
 ```
 
 ```csharp
-        private HttpClient CreateClient()
-        {
-            var testServer = new TestServer(
-                WebHost.CreateDefaultBuilder()
-                    .UseStartup<Startup>()
-                    .ConfigureServices(services =>
-                    {
-                        // Add service overrides here
-                        // In WebApi Startup class, use TryAddScoped to only add if not overridden here
-                        // Example
-                        // services.AddScoped<YourAbstractOrInterface>(provider => PrivateFunctionHere);
-                        services.AddScoped<DbConnection>(_ => Connection);
-                    })
-            );
-            return testServer.CreateClient();
-        }
+private HttpClient CreateClient()
+{
+    var testServer = new TestServer(
+        WebHost.CreateDefaultBuilder()
+            .UseStartup<Startup>()
+            .ConfigureServices(services =>
+            {
+                // Add service overrides here
+                // In WebApi Startup class, use TryAddScoped to only add if not overridden here
+                // Example
+                // services.AddScoped<YourAbstractOrInterface>(provider => PrivateFunctionHere);
+                services.AddScoped<DbConnection>(_ => Connection);
+            })
+    );
+    return testServer.CreateClient();
+}
 
-    [Fact]
-    public void FilmRepository_Get_Valid_Success()
-    {
-        var stubResults = new List<object[]>();
-        stubResults.Add(new []{1, "test title", "test description", 2018})
-        ExecuteReaderAsync = (command, behavior, token)
-            => Task.FromResult(new FakeDbDataReader(FilmTableColumnNames, stubResults) as DbDataReader);
-        var client = CreateClient();
-        var url = $"/api/films/1";
-        var result = await client.GetAsync(url);
-        // code here to verify you got a film
-    };
+[Fact]
+public async Task FilmsRepository_Get_Valid_Success()
+{
+    var stubResults = new List<object[]>();
+    stubResults.Add(new object[]{1, "test title", "test description", 2018});
+    ExecuteReaderAsync = (command, behavior, token)
+        => Task.FromResult(new FakeDbDataReader(FilmTableColumnNames, stubResults) as DbDataReader);
+    var client = CreateClient();
+    var url = $"/api/films/1";
+    var result = await client.GetAsync(url);
+    // code here to verify you got a film
+}
 
-    [Fact]
-    public void FilmRepository_Get_Zero_ThrowsArgumentException()
-    {
-        ExecuteReaderAsync = (command, behavior, token)
-            => Task.FromResult(throw new InvalidOperationException("Get should already have thrown"));
-        var client = CreateClient();
-        var url = $"/api/films/0";
-        var result = await client.GetAsync(url);
-        // code here to verify you got an exception
-    };
+[Fact]
+public async Task FilmsRepository_Get_Zero_ThrowsArgumentException()
+{
+    ExecuteReaderAsync = (command, behavior, token)
+        => throw new InvalidOperationException("Get should already have thrown");
+    var client = CreateClient();
+    var url = $"/api/films/0";
+    var result = await client.GetAsync(url);
+    // code here to verify you got an exception
+}
 ```
 
 ## Benefits
 
-This can be used with Dapper ( verify )
+This can be used with Dapper (recently verified with Query/QuerySingle)
 
 
 ## Caveats
